@@ -314,11 +314,6 @@ class FileSystemStore(IStore):
     def customer_phones(self) -> list[str]:
         return list(self.data.all_customers.keys())
 
-    def complete_order(self, order: Order):
-        self.data.active_orders.remove(order)
-        self.data.completed_orders.append(order)
-        self.save()
-
     def cancel_order(self, order: Order):
         self.data.active_orders.remove(order)
         self.save()
@@ -347,5 +342,4 @@ class FileSystemStore(IStore):
 
     def clear_orders(self):
         self.data.active_orders.clear()
-        self.data.completed_orders.clear()
         self.save()
