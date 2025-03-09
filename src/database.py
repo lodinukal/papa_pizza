@@ -10,9 +10,8 @@ import random
 class Status(Enum):
     PENDING = 1
     IN_PROGRESS = 2
-    DELIVERED = 3
-    CANCELLED = 4
-    DONE = 5
+    CANCELLED = 3
+    DONE = 4
 
 
 class Item:
@@ -71,6 +70,7 @@ class Order:
     def __init__(self, customer: Customer, items: dict[str, int]):
         self.customer = customer
         self.time = time.time()
+        self.completed_time = None
         self.status = Status.PENDING
         self.items = items
         self.is_home_delivery = False
@@ -96,6 +96,13 @@ class Order:
                 f"\t- {item} x {count} (${all_items[item].price:.2f} each, ${all_items[item].price * count:.2f} total)"
             )
         lines.append(f"Status: {self.status.name}")
+        if self.is_home_delivery:
+            lines.append("Home delivery")
+        if self.status == Status.DONE:
+            completed_time_str = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(self.completed_time)
+            )
+            lines.append(f"Completed at {completed_time_str}")
         costs = self.cost()
         lines.append(f"Gross: ${costs.raw_cost:.2f}")
         if costs.discount > 0:
@@ -109,14 +116,12 @@ class Order:
     def mark_in_progress(self):
         self.status = Status.IN_PROGRESS
 
-    def mark_delivered(self):
-        self.status = Status.DELIVERED
-
     def mark_cancelled(self):
         self.status = Status.CANCELLED
 
     def mark_done(self):
         self.status = Status.DONE
+        self.completed_time = time.time()
 
     def cost(self) -> OrderCost:
         costing = OrderCost()
@@ -150,6 +155,7 @@ class Order:
             "items": {item: count for item, count in self.items.items()},
             "is_home_delivery": self.is_home_delivery,
             "id": self.id,
+            "completed_time": self.completed_time,
         }
 
     def fromJSON(self, data):
@@ -157,11 +163,17 @@ class Order:
         self.status = Status[data["status"]]
         self.is_home_delivery = data["is_home_delivery"]
         self.id = data["id"]
+        if "completed_time" in data:
+            self.completed_time = data["completed_time"]
 
 
 class IStore(ABC):
     @abstractmethod
-    def get_active_orders(self) -> list[Order]:
+    def get_all_time_orders(self) -> list[Order]:
+        pass
+
+    @abstractmethod
+    def get_date_orders(self, time: float = time.time()) -> list[Order]:
         pass
 
     @abstractmethod
@@ -172,6 +184,10 @@ class IStore(ABC):
 
     @abstractmethod
     def get_customer(self, phone: str) -> typing.Optional[Customer]:
+        pass
+
+    @abstractmethod
+    def customer_phones(self) -> list[Customer]:
         pass
 
     @abstractmethod
@@ -198,15 +214,11 @@ class IStore(ABC):
 class FileSystemStoreData:
     # phone number to customer
     all_customers: dict[str, Customer]
-    # list of active orders
     active_orders: list[Order]
-    # active order is moved to completed orders after it is done
-    completed_orders: list[Order]
 
     def __init__(self):
         self.all_customers = {}
         self.active_orders = []
-        self.completed_orders = []
 
     def toJSON(self):
         all_customers = {
@@ -224,22 +236,10 @@ class FileSystemStoreData:
             }
             for order in self.active_orders
         ]
-        completed_orders = [
-            {
-                "customer": order.customer.phone,
-                "time": order.time,
-                "status": order.status.name,
-                "items": {item: count for item, count in order.items.items()},
-                "is_home_delivery": order.is_home_delivery,
-                "id": order.id,
-            }
-            for order in self.completed_orders
-        ]
 
         return {
             "all_customers": all_customers,
             "active_orders": active_orders,
-            "completed_orders": completed_orders,
         }
 
     def fromJSON(self, data):
@@ -253,13 +253,6 @@ class FileSystemStoreData:
             )
             new_order.fromJSON(order)
             self.active_orders.append(new_order)
-        for order in data["completed_orders"]:
-            customer = self.all_customers[order["customer"]]
-            new_order = Order(
-                customer, {item: count for item, count in order["items"].items()}
-            )
-            new_order.fromJSON(order)
-            self.completed_orders.append(new_order)
 
 
 class DataError(Exception):
@@ -291,8 +284,18 @@ class FileSystemStore(IStore):
         with open(self.file_path, "w") as file:
             file.write(json.dumps(self.data.toJSON()))
 
-    def get_active_orders(self) -> list[Order]:
-        return list(self.data.active_orders)
+    def get_all_time_orders(self) -> list[Order]:
+        all_orders = list(self.data.active_orders)
+        return all_orders
+
+    def get_date_orders(self, t: float = time.time()) -> list[Order]:
+        day = time.localtime(t).tm_yday
+        today_orders = [
+            order
+            for order in self.data.active_orders
+            if time.localtime(order.time).tm_yday == day
+        ]
+        return today_orders
 
     def add_order(
         self, customer: Customer, items: list[Item], is_home_delivery: bool
@@ -307,6 +310,9 @@ class FileSystemStore(IStore):
 
     def get_customer(self, phone: str) -> typing.Optional[Customer]:
         return self.data.all_customers.get(phone)
+
+    def customer_phones(self) -> list[str]:
+        return list(self.data.all_customers.keys())
 
     def complete_order(self, order: Order):
         self.data.active_orders.remove(order)

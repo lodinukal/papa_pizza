@@ -1,7 +1,10 @@
 import typing
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
-from database import Customer, DataError, IStore, all_items
+from database import Customer, DataError, IStore, all_items, Status
+from fake import fake_customer, fake_order
+
+import time
 
 
 class Context:
@@ -48,15 +51,223 @@ class HelpCommand(Command):
 
 class ViewActiveOrdersCommand(Command):
     def __init__(self):
-        super().__init__("view_orders", "View all active orders")
+        super().__init__(
+            "view_orders",
+            "View all active orders, using a true flag if all orders of all time should be shown otherwise just today, usage: view_orders <all_time>?",
+        )
 
     def execute(self, args: typing.List[str]) -> typing.Optional[str]:
-        orders = cli_context.store.get_active_orders()
+        all_time = False
+        if len(args) > 0 and args[0].lower() == "true":
+            all_time = True
+
+        orders = (
+            cli_context.store.get_all_time_orders()
+            if all_time
+            else cli_context.store.get_date_orders()
+        )
         if not orders or len(orders) == 0:
             return "No orders found"
+        orders.sort(key=lambda x: (-x.status.value, x.time))
 
-        print("\n".join([str(order) for order in orders]))
+        active_orders = []
+        completed_orders = []
+
+        for order in orders:
+            if order.status == Status.DONE:
+                completed_orders.append(order)
+            else:
+                active_orders.append(order)
+
+        print("Today's orders:" if not all_time else "All time orders:")
+        print("Active orders:")
+        print("\n".join([str(order) for order in active_orders]))
+        print("Completed orders:")
+        print("\n".join([str(order) for order in completed_orders]))
         return None
+
+
+class DailySummaryCommand(Command):
+    def __init__(self):
+        super().__init__(
+            "daily_summary",
+            "View daily summary, for today or another day, usage: daily_summary <date>?",
+        )
+
+    def execute(self, args: typing.List[str]) -> typing.Optional[str]:
+        date = time.time()
+        if len(args) > 0:
+            try:
+                t = time.strptime(args[0], "%Y-%m-%d")
+                date = time.mktime(t)
+            except ValueError:
+                return "Invalid date format, use YYYY-MM-DD"
+
+        time_str = time.strftime("%Y-%m-%d", time.localtime(date))
+
+        orders = cli_context.store.get_date_orders(date)
+        if not orders or len(orders) == 0:
+            return f"No orders on {time_str}"
+
+        total_orders = len(orders)
+        total_sales = 0
+        total_delivery_sales = 0
+
+        for order in orders:
+            if order.status != Status.DONE:
+                continue
+            cost = order.cost()
+            total_sales += cost.cost_before_gst
+            if order.is_home_delivery:
+                total_delivery_sales += cost.cost_before_gst
+
+        print(f"Summary for {time_str}:")
+        print(f"Total orders: {total_orders}")
+        print(f"Total sales: ${total_sales}")
+        print(f"Total delivery sales: ${total_delivery_sales}")
+
+        return None
+
+
+class FakeCustomersCommand(Command):
+    def __init__(self):
+        super().__init__(
+            "fake_customers",
+            "Generate fake customers and add them to the store, usage: fake_customers <count>",
+        )
+
+    def execute(self, args: typing.List[str]) -> typing.Optional[str]:
+        if len(args) < 1:
+            return "Usage: fake_customers <count>"
+
+        try:
+            count = int(args[0])
+            for _ in range(count):
+                customer = fake_customer()
+                cli_context.store.get_or_add_customer(customer.phone, customer.name)
+            return f"Added {count} customers"
+        except ValueError:
+            return "Invalid count"
+
+
+import random
+
+
+class FakeOrdersCommand(Command):
+    def __init__(self):
+        super().__init__(
+            "fake_orders",
+            "Generate fake orders and add them to the store, usage: fake_orders <count>",
+        )
+
+    def execute(self, args: typing.List[str]) -> typing.Optional[str]:
+        if len(args) < 1:
+            return "Usage: fake_orders <count>"
+
+        try:
+            count = int(args[0])
+            for _ in range(count):
+                items, home_delivery, order_time = fake_order()
+                phone_random = random.choice(cli_context.store.customer_phones())
+                customer = cli_context.store.get_customer(phone_random)
+                order = cli_context.store.add_order(customer, items, home_delivery)
+                order.time = order_time
+            return f"Added {count} orders"
+        except ValueError:
+            return "Invalid count"
+
+
+class MarkInProgressCommand(Command):
+    def __init__(self):
+        super().__init__(
+            "mark_in_progress",
+            "Mark an order as in progress, usage: mark_in_progress <order_id>",
+        )
+
+    def execute(self, args: typing.List[str]) -> typing.Optional[str]:
+        if len(args) < 1:
+            return "Usage: mark_in_progress <order_id>"
+
+        order_id_str = args[0]
+        try:
+            order_id = int(order_id_str)
+            order = next(
+                (
+                    order
+                    for order in cli_context.store.get_all_time_orders()
+                    if order.id == order_id
+                ),
+                None,
+            )
+        except ValueError:
+            return "Invalid order id"
+        if not order:
+            return "Order not found"
+
+        order.mark_in_progress()
+        return f"Marked order {order_id} as in progress"
+
+
+class MarkCancelledCommand(Command):
+    def __init__(self):
+        super().__init__(
+            "mark_cancelled",
+            "Mark an order as cancelled, usage: mark_cancelled <order_id>",
+        )
+
+    def execute(self, args: typing.List[str]) -> typing.Optional[str]:
+        if len(args) < 1:
+            return "Usage: mark_cancelled <order_id>"
+
+        order_id_str = args[0]
+        try:
+            order_id = int(order_id_str)
+            order = next(
+                (
+                    order
+                    for order in cli_context.store.get_all_time_orders()
+                    if order.id == order_id
+                ),
+                None,
+            )
+        except ValueError:
+            return "Invalid order id"
+        if not order:
+            return "Order not found"
+
+        order.mark_cancelled()
+        return f"Marked order {order_id} as cancelled"
+
+
+class MarkDoneCommand(Command):
+    def __init__(self):
+        super().__init__(
+            "mark_done",
+            "Mark an order as done, usage: mark_done <order_id>",
+        )
+
+    def execute(self, args: typing.List[str]) -> typing.Optional[str]:
+        if len(args) < 1:
+            return "Usage: mark_done <order_id>"
+
+        order_id_str = args[0]
+        try:
+            order_id = int(order_id_str)
+            order = next(
+                (
+                    order
+                    for order in cli_context.store.get_all_time_orders()
+                    if order.id == order_id
+                ),
+                None,
+            )
+        except ValueError:
+            return "Invalid order id"
+        if not order:
+            return "Order not found"
+
+        order.mark_done()
+        return f"Marked order {order_id} as completed"
 
 
 class AddCustomerCommand(Command):
@@ -164,7 +375,7 @@ class OrderInfoCommand(Command):
             order = next(
                 (
                     order
-                    for order in cli_context.store.get_active_orders()
+                    for order in cli_context.store.get_all_time_orders()
                     if order.id == order_id
                 ),
                 None,
