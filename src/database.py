@@ -65,6 +65,33 @@ class OrderCost:
         self.gst = 0.0
         self.cost_after_gst = 0.0
 
+    def add_items(self, item_name: str, quantity: int):
+        self.raw_cost += all_items[item_name].price * quantity
+
+    def add_deliver_cost(self):
+        self.delivery_cost = 8.0
+
+    def add_discount(self):
+        self.discount = self.raw_cost * 0.05
+
+    def can_discount_apply(self):
+        return self.raw_cost > 100
+
+    def calculate_pre_gst_cost(self):
+        self.cost_before_gst = self.raw_cost - self.discount + self.delivery_cost
+
+    def calculate_gst(self):
+        self.calculate_pre_gst_cost()
+        self.gst = self.cost_before_gst * 0.1
+
+    def calculate_total_cost(self):
+        self.calculate_gst()
+        self.cost_after_gst = self.cost_before_gst + self.gst
+
+    def get_total_cost(self):
+        self.calculate_total_cost()
+        return self.cost_after_gst
+
 
 class Order:
     def __init__(self, customer: Customer, items: dict[str, int]):
@@ -125,26 +152,13 @@ class Order:
 
     def cost(self) -> OrderCost:
         costing = OrderCost()
-        costing.raw_cost = sum(
-            all_items[item].price * count for item, count in self.items.items()
-        )
-
-        # check if the customer can receive a discount
-        over_100 = costing.raw_cost > 100
-        if self.customer.is_eligible_for_discount() and over_100:
-            # 5% discount
-            costing.discount = costing.raw_cost * 0.05
-
+        for item, count in self.items.items():
+            costing.add_items(item, count)
+        if self.customer.is_eligible_for_discount() and costing.can_discount_apply():
+            costing.add_discount()
         if self.is_home_delivery:
-            costing.delivery_cost = 5.0
-
-        costing.cost_before_gst = (
-            costing.raw_cost - costing.discount + costing.delivery_cost
-        )
-        # 10% tax
-        costing.gst = costing.cost_before_gst * 0.1
-        costing.cost_after_gst = costing.cost_before_gst + costing.gst
-
+            costing.add_deliver_cost()
+        costing.get_total_cost()
         return costing
 
     def toJSON(self):
@@ -225,17 +239,7 @@ class FileSystemStoreData:
             k: {"name": v.name, "phone": v.phone, "loyalty_member": v.loyalty_member}
             for k, v in self.all_customers.items()
         }
-        active_orders = [
-            {
-                "customer": order.customer.phone,
-                "time": order.time,
-                "status": order.status.name,
-                "items": {item: count for item, count in order.items.items()},
-                "is_home_delivery": order.is_home_delivery,
-                "id": order.id,
-            }
-            for order in self.active_orders
-        ]
+        active_orders = [order.toJSON() for order in self.active_orders]
 
         return {
             "all_customers": all_customers,

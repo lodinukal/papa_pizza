@@ -109,13 +109,14 @@ class DailySummaryCommand(Command):
         if not orders or len(orders) == 0:
             return f"No orders on {time_str}"
 
-        total_orders = len(orders)
+        total_orders = 0
         total_sales = 0
         total_delivery_sales = 0
 
         for order in orders:
             if order.status != Status.DONE:
                 continue
+            total_orders += 1
             cost = order.cost()
             total_sales += cost.cost_before_gst
             if order.is_home_delivery:
