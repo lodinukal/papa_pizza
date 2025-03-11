@@ -113,6 +113,8 @@ class DailySummaryCommand(Command):
         total_sales = 0
         total_delivery_sales = 0
 
+        all_items_sold = dict()
+
         for order in orders:
             if order.status != Status.DONE:
                 continue
@@ -120,11 +122,19 @@ class DailySummaryCommand(Command):
             total_sales += cost.cost_before_gst
             if order.is_home_delivery:
                 total_delivery_sales += cost.cost_before_gst
+            for item, count in order.items.items():
+                if item not in all_items_sold:
+                    all_items_sold[item] = 0
+                all_items_sold[item] += count
 
         print(f"Summary for {time_str}:")
         print(f"Total orders: {total_orders}")
         print(f"Total sales: ${total_sales}")
         print(f"Total delivery sales: ${total_delivery_sales}")
+
+        print("Items sold:")
+        for item, count in all_items_sold.items():
+            print(f"\t- {item}: {count}")
 
         return None
 

@@ -199,10 +199,6 @@ class IStore(ABC):
         pass
 
     @abstractmethod
-    def complete_order(self, order: Order):
-        pass
-
-    @abstractmethod
     def cancel_order(self, order: Order):
         pass
 
