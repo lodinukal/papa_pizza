@@ -7,6 +7,10 @@ from fake import fake_customer, fake_order
 import time
 
 
+# a context object which stores the store object
+# more objects can be added here if needed
+# this avoids using too many global variables
+# and makes it easier to test the code (as we can just replace the context object)
 class Context:
     store: IStore
 
@@ -14,9 +18,12 @@ class Context:
         self.store = store
 
 
+# default context used by cli commands
 cli_context: Context = None
 
 
+# a parent class for all commands
+# it will register all commands in a dictionary
 class Command:
     name: str
     description: str
@@ -33,6 +40,7 @@ class Command:
         pass
 
 
+# a help command to direct users to other commands and show their usage
 class HelpCommand(Command):
     def __init__(self):
         super().__init__("help", "Prints a help message, usage: help <command>?")
@@ -49,6 +57,7 @@ class HelpCommand(Command):
         return None
 
 
+# a command to view all orders, for the day or all time
 class ViewActiveOrdersCommand(Command):
     def __init__(self):
         super().__init__(
@@ -87,6 +96,7 @@ class ViewActiveOrdersCommand(Command):
         return None
 
 
+# provides a summary of the day's sales, if no argument is provided, it will show today's saless
 class DailySummaryCommand(Command):
     def __init__(self):
         super().__init__(
@@ -140,6 +150,7 @@ class DailySummaryCommand(Command):
         return None
 
 
+# testing, just generates a lot of customers
 class FakeCustomersCommand(Command):
     def __init__(self):
         super().__init__(
@@ -164,6 +175,7 @@ class FakeCustomersCommand(Command):
 import random
 
 
+# testing, just generates a lot of orders
 class FakeOrdersCommand(Command):
     def __init__(self):
         super().__init__(
@@ -188,6 +200,7 @@ class FakeOrdersCommand(Command):
             return "Invalid count"
 
 
+# sets an order as in progress
 class MarkInProgressCommand(Command):
     def __init__(self):
         super().__init__(
@@ -219,6 +232,7 @@ class MarkInProgressCommand(Command):
         return f"Marked order {order_id} as in progress"
 
 
+# sets an order as cancelled
 class MarkCancelledCommand(Command):
     def __init__(self):
         super().__init__(
@@ -250,6 +264,7 @@ class MarkCancelledCommand(Command):
         return f"Marked order {order_id} as cancelled"
 
 
+# sets an order as done
 class MarkDoneCommand(Command):
     def __init__(self):
         super().__init__(
@@ -281,6 +296,7 @@ class MarkDoneCommand(Command):
         return f"Marked order {order_id} as completed"
 
 
+# adds a new customer
 class AddCustomerCommand(Command):
     def __init__(self):
         super().__init__(
@@ -301,6 +317,7 @@ class AddCustomerCommand(Command):
         return f"Added customer {name} with phone number {phone}"
 
 
+# sets a customer as a loyalty member or not
 class SetCustomerLoyaltyCommand(Command):
     def __init__(self):
         super().__init__(
@@ -322,6 +339,7 @@ class SetCustomerLoyaltyCommand(Command):
         return f"Set loyalty status for {phone} to {loyalty_status}"
 
 
+# adds a new order, prompts the user for items and quantities and additional information
 class StartOrderCommand(Command):
     available_item_str = ",\n".join([f"\t- {item}" for item in all_items])
 
@@ -370,6 +388,7 @@ class StartOrderCommand(Command):
         return
 
 
+# gives the full order information for a given order id
 class OrderInfoCommand(Command):
     def __init__(self):
         super().__init__(
@@ -403,12 +422,14 @@ for c in Command.__subclasses__():
     c()
 
 
+# the main loop for the command line interface
 def loop(context: Context):
     global cli_context
     old_context = cli_context
     cli_context = context
     exited_once = False
     while True:
+        # exception handling to prevent ctrl+c from exiting the program directly
         try:
             command_string = input("Enter command: ")
         except KeyboardInterrupt:
@@ -421,6 +442,7 @@ def loop(context: Context):
         split_command = command_string.split(" ")
         command_word = split_command[0]
         command_args = split_command[1:]
+        # exit is a default command to exit the program
         if command_word == "exit":
             break
 

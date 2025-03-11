@@ -4,12 +4,14 @@ from database import IStore, Customer, all_items
 fake = Faker()
 
 
+# generates fake data for testing
 def fake_customer() -> Customer:
     customer = Customer(fake.name(), fake.phone_number())
     customer.set_loyalty_member(fake.boolean())
     return customer
 
 
+# generates fake data for testing
 def fake_order() -> tuple[dict[str, int], bool, float]:
     items = dict()
     for _ in range(fake.random_int(1, 5)):
