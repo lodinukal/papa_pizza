@@ -366,8 +366,8 @@ class StartOrderCommand(Command):
                 continue
             try:
                 count = int(input("Enter item count: "))
-                if count < 0:
-                    print("Invalid count, cannot add negative items")
+                if count < 1:
+                    print("Invalid count, cannot add negative or zero items")
                     continue
                 if item not in items:
                     items[item] = count
@@ -422,12 +422,39 @@ for c in Command.__subclasses__():
     c()
 
 
+initial_prompt = """Welcome to the pizza store command line interface
+To begin, use the `help` command to see available commands
+and `exit` to exit the program
+
+Press ctrl-c to interrupt a command and ctrl-c twice on the command prompt to exit
+
+Some basic information:
+add_customer <phone> <name> - add a new customer
+set_loyalty <phone> <loyalty_status> - set loyalty status for a customer, where phone is the phone number and loyalty_status is true or false
+start_order <phone> - start a new order for a customer
+order_info <order_id> - get information about an order
+view_orders - view orders for today
+view_orders true - view all orders for all time
+daily_summary - view daily summary for today
+daily_summary <date> - view daily summary for a specific date in the format YYYY-MM-DD
+mark_in_progress <order_id> - mark an order as in progress
+mark_done <order_id> - mark an order as done
+mark_cancelled <order_id> - mark an order as cancelled
+
+utility commands:
+fake_customers <count> - generate fake customers
+fake_orders <count> - generate fake orders using existing customers
+help <command>? - get help on a specific command, i.e. `help add_customer`
+"""
+
+
 # the main loop for the command line interface
 def loop(context: Context):
     global cli_context
     old_context = cli_context
     cli_context = context
     exited_once = False
+    print(initial_prompt)
     while True:
         # exception handling to prevent ctrl+c from exiting the program directly
         try:
@@ -449,7 +476,14 @@ def loop(context: Context):
         found = False
         if command_word in Command.all_commands:
             found = True
-            message = Command.all_commands[command_word].execute(command_args)
+            try:
+                message = Command.all_commands[command_word].execute(command_args)
+            except KeyboardInterrupt:
+                print("\nCommand interrupted\n")
+                message = None
+            except:
+                print("Unexpected error from command")
+                message = None
             if message:
                 print(message)
 
